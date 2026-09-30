@@ -15,8 +15,8 @@ h1{margin:0;font-size:22px;letter-spacing:.3px;font-weight:700;background:linear
 .stats{display:flex;gap:8px;padding:0 18px 12px}
 .stat{flex:1;background:rgba(255,255,255,.05);border-radius:12px;padding:8px 6px;text-align:center}
 .stat b{display:block;font-size:18px}.stat span{font-size:10.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.6px}
-.btns{display:flex;gap:6px;padding:0 18px 12px}
-button{font:inherit;font-size:12px;color:var(--ink);background:rgba(255,255,255,.07);border:1px solid var(--line);border-radius:999px;padding:6px 11px;cursor:pointer}
+.btns{display:flex;gap:4px;white-space:nowrap;padding:0 18px 12px}
+button{font:inherit;font-size:11.5px;color:var(--ink);background:rgba(255,255,255,.07);border:1px solid var(--line);border-radius:999px;padding:6px 8px;cursor:pointer}
 button:hover{background:rgba(255,255,255,.15)}button.on{background:#ffd27a;color:#22124a;border-color:#ffd27a}
 #list{overflow:auto;padding:4px 10px 12px;border-top:1px solid var(--line)}
 .row{display:flex;align-items:center;gap:9px;padding:5px 8px;border-radius:10px;cursor:pointer;font-size:12.5px}
@@ -29,12 +29,12 @@ button:hover{background:rgba(255,255,255,.15)}button.on{background:#ffd27a;color
 </style></head><body>
 <div id="map"></div><div id="tip"></div>
 <aside id="panel">
- <header><h1>Jacareí em Movimento</h1><div class="sub">Rede do transporte público · GTFS</div></header>
+ <header><h1>Jacareí em Movimento</h1><div class="sub">Rede do transporte público · GTFS + OpenStreetMap</div></header>
  <div class="stats"><div class="stat"><b id="sl"></b><span>linhas</span></div><div class="stat"><b id="ss"></b><span>paradas</span></div><div class="stat"><b id="st"></b><span>viagens</span></div></div>
- <div class="btns"><button id="rot">↻ Girar</button><button id="bars" class="on">Paradas 3D</button><button id="all">Todas</button></div>
+ <div class="btns"><button id="rot">↻ Girar</button><button id="bars" class="on">Colunas</button><button id="all">Todas</button><button id="city">Zoom cidade</button></div>
  <div id="list"></div>
 </aside>
-<div id="hint">arraste = mover · botão direito/Ctrl = inclinar e girar · colunas = movimento da parada</div>
+<div id="hint">arraste = mover · botão direito/Ctrl = inclinar e girar · colunas = movimento da parada · 'Zoom cidade' mostra prédios em 3D</div>
 <script>/**
  * MapLibre GL JS
  * @license 3-Clause BSD. Full text of license: https://github.com/maplibre/maplibre-gl-js/blob/v4.7.1/LICENSE.txt
@@ -101,7 +101,7 @@ const info=D.info.sort((a,b)=>a.r.localeCompare(b.r,'pt',{numeric:true}));
 const cx=-45.96,cy=-23.30;
 const bb=[[Infinity,Infinity],[-Infinity,-Infinity]];
 D.mun.geometry.coordinates[0].forEach(([x,y])=>{bb[0][0]=Math.min(bb[0][0],x);bb[0][1]=Math.min(bb[0][1],y);bb[1][0]=Math.max(bb[1][0],x);bb[1][1]=Math.max(bb[1][1],y)});
-const map=new maplibregl.Map({container:'map',style:{version:8,sources:{},layers:[]},bounds:[[-46.09,-23.37],[-45.78,-23.23]],fitBoundsOptions:{padding:{left:340,top:20,right:20,bottom:20}},pitch:62,bearing:-22,maxPitch:80,attributionControl:false,antialias:true});
+const map=new maplibregl.Map({container:'map',style:{version:8,glyphs:'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf',sources:{},layers:[]},bounds:[[-46.09,-23.37],[-45.78,-23.23]],fitBoundsOptions:{padding:{left:340,top:20,right:20,bottom:20}},pitch:62,bearing:-22,maxPitch:80,attributionControl:false,antialias:true});
 // graticule
 const gr={type:'FeatureCollection',features:[]};
 for(let x=bb[0][0]-.25;x<=bb[1][0]+.25;x+=.02)gr.features.push({type:'Feature',geometry:{type:'LineString',coordinates:[[x,bb[0][1]-.25],[x,bb[1][1]+.25]]}});
@@ -112,15 +112,35 @@ const cols={type:'FeatureCollection',features:D.stops.features.map(f=>{const [x,
  for(let i=0;i<=8;i++){const a=i/8*Math.PI*2;ring.push([x+Math.cos(a)*R/k,y+Math.sin(a)*R])}
  return {type:'Feature',properties:{t:f.properties.t,n:f.properties.n,h:30+Math.sqrt(f.properties.t)*14},geometry:{type:'Polygon',coordinates:[ring]}}})};
 const colorExpr=['match',['get','r'],...info.flatMap(i=>[i.r,i.c]),'#fff'];
+map.on('error',()=>{});
 map.on('load',()=>{
  map.addSource('g',{type:'geojson',data:gr});
  map.addSource('m',{type:'geojson',data:D.mun});
  map.addSource('r',{type:'geojson',data:D.routes});
  map.addSource('s',{type:'geojson',data:cols});
  map.addLayer({id:'grid',type:'line',source:'g',paint:{'line-color':'#8a7dff','line-opacity':.09,'line-width':.7}});
- // pseudo-thickness: stacked translated copies
- for(let i=34;i>=2;i-=4)map.addLayer({id:'side'+i,type:'fill',source:'m',paint:{'fill-color':i>18?'#0c0a2e':'#1a1554','fill-translate':[0,i],'fill-translate-anchor':'viewport','fill-antialias':false}});
- map.addLayer({id:'top',type:'fill',source:'m',paint:{'fill-color':'#2b2470','fill-opacity':1}});
+ map.addLayer({id:'top',type:'fill',source:'m',paint:{'fill-color':'#2b2470'}});
+ // ---- contexto urbano (OpenFreeMap / OpenStreetMap) ----
+ map.addSource('osm',{type:'vector',url:'https://tiles.openfreemap.org/planet',attribution:'© OpenStreetMap · OpenFreeMap'});
+ const L=(id,type,sl,paint,extra={})=>map.addLayer({id,type,source:'osm','source-layer':sl,paint,...extra});
+ L('o-wood','fill','landcover',{'fill-color':'#1f4a6e','fill-opacity':.55},{filter:['in',['get','class'],['literal',['wood','grass','farmland']]]});
+ L('o-park','fill','park',{'fill-color':'#1f5a78','fill-opacity':.6});
+ L('o-res','fill','landuse',{'fill-color':'#35298a','fill-opacity':.7},{filter:['in',['get','class'],['literal',['residential','suburb','neighbourhood']]]});
+ L('o-ind','fill','landuse',{'fill-color':'#3b2f7a','fill-opacity':.6},{filter:['in',['get','class'],['literal',['industrial','commercial','retail']]]});
+ L('o-water','fill','water',{'fill-color':'#0d2b66'});
+ L('o-waterway','line','waterway',{'line-color':'#1b4a9c','line-width':['interpolate',['linear'],['zoom'],10,.6,15,2.5]});
+ const rc=['in',['get','class'],['literal',['motorway','trunk','primary','secondary','tertiary']]];
+ L('o-road-min','line','transportation',{'line-color':'#5a4ec4','line-opacity':.75,'line-width':['interpolate',['linear'],['zoom'],11,.3,15,2.6]},{minzoom:11,filter:['in',['get','class'],['literal',['minor','service']]],layout:{'line-cap':'round'}});
+ L('o-road-maj','line','transportation',{'line-color':'#a99cff','line-opacity':.9,'line-width':['interpolate',['linear'],['zoom'],9,.6,15,4.5]},{filter:rc,layout:{'line-cap':'round','line-join':'round'}});
+ L('o-road-hw','line','transportation',{'line-color':'#ffb86b','line-width':['interpolate',['linear'],['zoom'],9,1,15,6]},{filter:['in',['get','class'],['literal',['motorway','trunk']]],layout:{'line-cap':'round'}});
+ L('o-rail','line','transportation',{'line-color':'#6f6bb0','line-dasharray':[2,2],'line-width':1},{filter:['==',['get','class'],'rail']});
+ L('o-bld','fill-extrusion','building',{'fill-extrusion-color':['interpolate',['linear'],['get','render_height'],0,'#5246b8',40,'#8a7dff',120,'#c9c0ff'],'fill-extrusion-height':['max',['get','render_height'],6],'fill-extrusion-base':['get','render_min_height'],'fill-extrusion-opacity':.92,'fill-extrusion-vertical-gradient':true},{minzoom:13});
+ // fora do município: escurece o contexto
+ const ring=D.mun.geometry.coordinates[0];
+ map.addSource('mask',{type:'geojson',data:{type:'Feature',geometry:{type:'Polygon',coordinates:[[[-48,-25.5],[-43.5,-25.5],[-43.5,-21.5],[-48,-21.5],[-48,-25.5]],ring]}}});
+ map.addLayer({id:'mask',type:'fill',source:'mask',paint:{'fill-color':'#0d0b2e','fill-opacity':.72}});
+ map.addLayer({id:'place',type:'symbol',source:'osm','source-layer':'place',minzoom:10,filter:['in',['get','class'],['literal',['city','town','village','suburb','neighbourhood']]],layout:{'text-field':['coalesce',['get','name:pt'],['get','name']],'text-font':['Noto Sans Regular'],'text-size':['interpolate',['linear'],['zoom'],10,11,15,14],'text-transform':'uppercase','text-letter-spacing':.12,'text-max-width':8},paint:{'text-color':'#e9e4ff','text-halo-color':'#120f3a','text-halo-width':1.5,'text-opacity':.85}});
+ for(let i=8;i>=2;i-=2)map.addLayer({id:'side'+i,type:'line',source:'m',paint:{'line-color':'#0c0a2e','line-width':2.4,'line-translate':[0,i],'line-translate-anchor':'viewport','line-opacity':.85}});
  map.addLayer({id:'topglow',type:'line',source:'m',paint:{'line-color':'#ffd27a','line-width':6,'line-blur':8,'line-opacity':.55}});
  map.addLayer({id:'edge',type:'line',source:'m',paint:{'line-color':'#ffe3a8','line-width':1.6,'line-opacity':.95}});
  map.addLayer({id:'glow',type:'line',source:'r',layout:{'line-cap':'round','line-join':'round'},paint:{'line-color':colorExpr,'line-width':['interpolate',['linear'],['zoom'],10,4,14,14],'line-blur':8,'line-opacity':.35}});
@@ -142,6 +162,7 @@ map.on('load',()=>{
  const tick=()=>{map.setBearing(map.getBearing()+.12);raf=requestAnimationFrame(tick)};
  rot.onclick=()=>{spin=!spin;rot.classList.toggle('on',spin);if(spin)tick();else cancelAnimationFrame(raf)};
  const bt=document.getElementById('bars');bt.onclick=()=>{const v=map.getLayoutProperty('bars','visibility')==='none';map.setLayoutProperty('bars','visibility',v?'visible':'none');bt.classList.toggle('on',v)};
+ document.getElementById('city').onclick=()=>map.flyTo({center:[-45.966,-23.305],zoom:14.6,pitch:66,bearing:-28,duration:3500});
  const tip=document.getElementById('tip');
  map.on('mousemove',e=>{const fs=map.queryRenderedFeatures(e.point,{layers:['bars','route']});map.getCanvas().style.cursor=fs.length?'pointer':'';
   if(!fs.length){tip.style.display='none';return}const p=fs[0].properties;
